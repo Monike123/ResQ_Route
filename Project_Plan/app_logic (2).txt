@@ -1,0 +1,138 @@
+
+App Concept: "Safe Route App" ()
+Core Logic: Unlike Google Maps, which optimizes for time, this app optimizes for safety and provides active monitoring during the trip.
+
+Phase 1: Authentication & Setup (Trust Layer)
+Step 1: Identity Verification:
+
+login info:
+contact no. 
+passowrd
+
+The user opens the app. If new, they Sign Up.
+
+signup info:
+contact no.
+email id
+aadhar details/ PNA card details
+password
+slect emergency contacts no. 
+
+They must provide Aadhar/PAN details. Working: The app verifies this against government APIs to ensure no "fake profiles" are using the app to stalk others.
+
+Step 2: Emergency Circle:
+
+The user selects 3 Verified Contacts from their phone book.
+
+System Action: The app saves these numbers locally and on the server to ensure SMS/Alerts go out even if the app crashes.
+
+Phase 2: Route Planning (Pre-Trip Awareness)
+Step 3: Destination Input:
+
+The user enters their destination on the Home Page.
+
+Visualizing Danger: Before selecting a route, the map displays red flags indicating "Unsafe Zones" (historical data on flagged by other users, etc.) so the user is aware of areas to avoid.
+
+Step 4: The "Safest" Selection:
+
+The algorithm calculates routes based on "SAFETY SCORES" using crimes data and severity of crime using gemini API to search for crimes happened on every road on the paths.
+
+The user sees 3 cardswith safety score out of 100%:
+
+Safest 1 (Recommended): Highest safety score, might be slightly longer.
+
+Safest 2: Good balance of safety and time.
+
+Safest 3: Shortest, but with acceptable safety rating.
+
+Step 5: The Safety Handshake:
+
+Before clicking "Start," the user toggles "Share Live Location."
+
+System Action: An SMS link is instantly sent to the 3 contacts: "User X has started a trip to [Location]. Track them here."
+
+Phase 3: The Journey (Active Monitoring)
+This is the most critical phase where the app is "watching" the user.
+
+Feature A: SOS button 
+
+The app UI has button on page of SOS which works with 5 secs touch
+
+Feature B: Voice-Activated SOS (Hands-Free)
+
+The app listens in the background for a specific key phrase (e.g., "HELP SAFE APP").
+
+Working: If the user screams this phrase, the app triggers the SOS mode immediately without needing to unlock the phone or touch the screen.
+
+Feature C: The "Stationary" Deadman Switch
+
+The GPS monitors movement.
+
+Logic: If the user's location coordinates do not change by more than 10 meters for 20 minutes:
+
+Phone Vibrates: A notification asks "Are you okay?"
+
+Countdown: A 60-second timer begins.
+
+Trigger: If the user does not tap "I'm Okay," the app assumes they are incapacitated or detained and auto-sends an SOS alert with the last known location to the 3 contacts and local emergency services.
+
+Feature D: Flagging Unsafe Areas (Crowdsourcing)
+
+While walking, if the user sees a broken street light or a suspicious group, they tap the "Flag Unsafe Area" button.
+
+Working: This drops a pin on the server map. If multiple users flag the same spot, it becomes a permanent "Red Flag" on Page 3 for future users.
+
+Phase 4: Emergency Response (If needed)
+The SOS State:
+
+If SOS is triggered (via Button, Voice, or Timer):
+
+Contacts are notified, other national emergency services are notified (like ambulance, police, etc)
+Live location is shared at high frequency (every 20 seconds).
+
+Phase 5: Completion & Reporting
+Step 6: Arrival:
+
+The user reaches the destination. The Live Location link expires/stops sharing.
+
+Step 7: SRR (Safe Route Report):
+
+A popup summarizes the trip.
+
+SRR button along side of SOS button throughout the journey
+
+Journey Summary:
+Traveler: [User Name] (Verified via Aadhar/PAN)
+Duration:(Est: 40 mins)
+Distance
+Route Details:
+Source
+Destination
+Route Selected
+crimes on routes
+Safety Diagnostics:
+Safety Score: 94/100 (High)
+Commercial Points Passed: 14 (Shops, ATMs, Fuel Stations)
+
+Action: The user can download this as a PDF (useful for claiming travel expenses or filing police complaints if an incident occurred).
+[Footer Actions]
+[ DOWNLOAD PDF ] [ SHARE REPORT ]
+
+Step 8: Feedback:
+
+The user rates the safety of the path (1-5 stars).
+
+This data feeds back into the algorithm to help generate "Safest 1" routes for other users tomorrow.
+
+user can download the SRR report (optional)
+
+Summary of Logic Flow
+Input: Destination + User ID.
+
+Process: Algorithm scans map for Commercial Points + User Flags -> Generates 3 Safe Routes.
+
+Monitor: GPS tracks movement + Microphone listens for Keywords.
+
+Trigger: IF (Stop > 20min) OR (Voice = "Help") -> THEN (Alert Contacts).
+
+Output: Safe Arrival + Data for future safety.
