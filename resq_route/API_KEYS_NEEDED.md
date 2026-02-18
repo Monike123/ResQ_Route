@@ -8,6 +8,9 @@ All keys needed before production. Placeholders are used during development.
 | 2 | **Supabase** | Anon Key (public) | `lib/core/constants/app_constants.dart` | ⏳ Placeholder |
 | 3 | **Supabase** | Service Role Key (private) | Edge Functions / server-side only | ⏳ Placeholder |
 | 4 | **Google Maps** | Maps API Key (Android + iOS) | `AndroidManifest.xml`, `AppDelegate.swift` | ⏳ Placeholder |
+| 4a | **Google Maps** | Directions API enabled | Edge Function `calculate-routes` | ⏳ Enable in GCP Console |
+| 4b | **Google Maps** | Places API enabled | Edge Function `places-autocomplete` | ⏳ Enable in GCP Console |
+| 4c | **Google Maps** | Geocoding API enabled | Edge Function `place-details` | ⏳ Enable in GCP Console |
 | 5 | **Twilio** | Account SID | Supabase Auth → Phone provider | ⏳ Placeholder |
 | 6 | **Twilio** | Auth Token | Supabase Auth → Phone provider | ⏳ Placeholder |
 | 7 | **Twilio** | Messaging Service SID | Supabase Auth → Phone provider | ⏳ Placeholder |
