@@ -14,7 +14,7 @@ All keys needed before production. Placeholders are used during development.
 | 5 | **Twilio** | Account SID | Supabase Auth → Phone provider | ⏳ Placeholder |
 | 6 | **Twilio** | Auth Token | Supabase Auth → Phone provider | ⏳ Placeholder |
 | 7 | **Twilio** | Messaging Service SID | Supabase Auth → Phone provider | ⏳ Placeholder |
-| 8 | **Gemini API** | API Key | AI safety features (Phase 7+) | ⏳ Placeholder |
+| 8 | **Gemini API** | API Key | Edge Function `ai-crime-analysis` (Phase 4) | ⏳ Placeholder |
 | 9 | **Identity Verification** | API Key | Aadhaar/PAN verify Edge Function | ⏳ Coming Soon |
 | 10 | **Identity Verification** | API URL | Aadhaar/PAN verify Edge Function | ⏳ Coming Soon |
 

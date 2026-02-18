@@ -1,18 +1,25 @@
 import 'package:flutter/material.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../data/models/route_model.dart';
+import '../../data/services/route_ranking_service.dart';
 
 /// Route selection card showing distance, duration, safety score, and label.
 class RouteCard extends StatelessWidget {
   final RouteModel route;
   final bool isSelected;
   final VoidCallback onTap;
+  final VoidCallback? onViewDetails;
+  final int rankIndex;
+  final int totalRoutes;
 
   const RouteCard({
     super.key,
     required this.route,
     required this.isSelected,
     required this.onTap,
+    this.onViewDetails,
+    this.rankIndex = 0,
+    this.totalRoutes = 1,
   });
 
   @override
@@ -59,16 +66,18 @@ class RouteCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        route.label,
+                        route.safetyScore != null
+                            ? RouteRankingService.getLabel(rankIndex, totalRoutes)
+                            : route.label,
                         style: theme.textTheme.titleSmall?.copyWith(
                           fontWeight: FontWeight.w600,
                         ),
                       ),
-                      if (route.routeIndex == 0)
+                      if (route.safetyScore != null)
                         Text(
-                          'Recommended',
+                          RouteRankingService.getScoreLabel(route.safetyScore),
                           style: theme.textTheme.bodySmall?.copyWith(
-                            color: AppColors.safetySafe,
+                            color: RouteRankingService.getScoreColor(route.safetyScore),
                             fontWeight: FontWeight.w500,
                           ),
                         ),
@@ -97,21 +106,39 @@ class RouteCard extends StatelessWidget {
               ],
             ),
 
-            // Select button
+            // Action buttons
             if (isSelected) ...[
               const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: onTap,
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
+              Row(
+                children: [
+                  if (onViewDetails != null && route.safetyScore != null)
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: onViewDetails,
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                        child: const Text('VIEW DETAILS'),
+                      ),
+                    ),
+                  if (onViewDetails != null && route.safetyScore != null)
+                    const SizedBox(width: 8),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: onTap,
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      child: const Text('START JOURNEY'),
                     ),
                   ),
-                  child: const Text('START JOURNEY'),
-                ),
+                ],
               ),
             ],
           ],
