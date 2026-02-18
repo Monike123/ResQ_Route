@@ -7,9 +7,11 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:vibration/vibration.dart';
 
 import '../../../../core/theme/app_colors.dart';
+import '../../../emergency/data/services/sos_service.dart';
+import '../../../emergency/presentation/providers/emergency_providers.dart';
+import '../../../emergency/presentation/widgets/sos_button.dart';
 import '../../../routes/presentation/providers/route_providers.dart';
 import '../../data/services/journey_state_machine.dart';
-
 import '../providers/monitoring_providers.dart';
 
 /// Active journey screen — full-bleed map with live tracking, SOS button,
@@ -61,7 +63,16 @@ class _ActiveJourneyScreenState extends ConsumerState<ActiveJourneyScreen> {
     stateMachine.onStartDeadman = () { deadman.start(); };
     stateMachine.onPauseDeadman = () { deadman.pause(); };
     stateMachine.onStopDeadman = () { deadman.stop(); };
-    stateMachine.onTriggerSOS = () { _handleSOS(); };
+    stateMachine.onTriggerSOS = () { _handleSOS(SOSTriggerType.deadman); };
+
+    // Wire SOS service with journey context
+    final sosService = ref.read(sosServiceProvider);
+    sosService.setJourneyId(null); // updated after createJourney
+
+    // Wire shake detector
+    final shake = ref.read(shakeDetectorServiceProvider);
+    shake.onShakeSOS = () { _handleSOS(SOSTriggerType.shake); };
+    shake.start();
 
     // Set route waypoints for deviation detector
     final waypoints = route.waypoints
@@ -100,6 +111,7 @@ class _ActiveJourneyScreenState extends ConsumerState<ActiveJourneyScreen> {
         shareLiveLocation: ref.read(shareLiveLocationProvider),
       );
       ref.read(activeJourneyIdProvider.notifier).state = journeyId;
+      ref.read(sosServiceProvider).setJourneyId(journeyId);
 
       // Transition idle → preTrip → active
       stateMachine.transition(JourneyState.preTrip);
@@ -116,7 +128,13 @@ class _ActiveJourneyScreenState extends ConsumerState<ActiveJourneyScreen> {
     }
   }
 
-  void _handleSOS() {
+  void _handleSOS(SOSTriggerType triggerType) {
+    // Transition state machine to SOS
+    ref.read(journeyStateMachineProvider).transition(JourneyState.sos);
+
+    // Trigger full SOS flow via service
+    ref.read(sosServiceProvider).trigger(triggerType);
+
     // Start vibration pattern
     _vibrationTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
       final hasVibrator = await Vibration.hasVibrator();
@@ -283,29 +301,12 @@ class _ActiveJourneyScreenState extends ConsumerState<ActiveJourneyScreen> {
           if (state == JourneyState.active || state == JourneyState.paused)
             const SizedBox(width: 12),
 
-          // SOS Button
+          // SOS Button (Phase 6 — hold / double-tap)
           if (state == JourneyState.active ||
               state == JourneyState.paused ||
               state == JourneyState.stationaryWarning)
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  ref
-                      .read(journeyStateMachineProvider)
-                      .transition(JourneyState.sos);
-                },
-                icon: const Icon(Icons.sos, color: Colors.white),
-                label: const Text('SOS',
-                    style: TextStyle(
-                        color: Colors.white, fontWeight: FontWeight.bold)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.sosRed,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-              ),
+            SOSButton(
+              onTriggered: () => _handleSOS(SOSTriggerType.button),
             ),
 
           // End Journey (SOS state)
@@ -501,6 +502,7 @@ class _ActiveJourneyScreenState extends ConsumerState<ActiveJourneyScreen> {
     ref.read(voiceTriggerServiceProvider).stopListening();
     ref.read(deadmanSwitchProvider).stop();
     ref.read(batteryServiceProvider).stop();
+    ref.read(shakeDetectorServiceProvider).stop();
     ref.read(journeyStateMachineProvider).reset();
     _vibrationTimer?.cancel();
   }

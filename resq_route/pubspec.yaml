@@ -51,6 +51,10 @@ dependencies:
   battery_plus: ^6.0.0
   vibration: ^2.0.0
 
+  # ── Phase 6: Emergency Response ──
+  sensors_plus: ^6.0.0
+  url_launcher: ^6.2.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
