@@ -65,4 +65,23 @@ class Validators {
     }
     return null;
   }
+
+  // ── Boolean convenience methods (used by usecases) ──
+
+  /// Returns true if the value is a valid Indian phone number.
+  static bool isValidIndianPhone(String value) {
+    final cleaned = value.replaceAll(RegExp(r'[\s\-\(\)]'), '');
+    return RegExp(r'^(\+91)?[6-9]\d{9}$').hasMatch(cleaned);
+  }
+
+  /// Returns true if the value is a valid email address.
+  static bool isValidEmail(String value) {
+    return RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value);
+  }
+
+  /// Returns true if the password meets strength requirements.
+  static bool isStrongPassword(String value) {
+    return validatePassword(value) == null;
+  }
 }
+

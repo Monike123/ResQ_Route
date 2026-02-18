@@ -30,4 +30,10 @@ class AppColors {
   static const Color markerOrigin = Color(0xFF1E88E5);
   static const Color markerDestination = Color(0xFFE53935);
   static const Color markerUnsafeZone = Color(0xFFFF5722);
+
+  // ── Semantic Aliases (for consistent screen usage) ──
+  static Color get primary => primaryBlue;
+  static Color get secondary => safetySafe;
+  static Color get error => sosRed;
 }
+
