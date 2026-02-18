@@ -1,0 +1,65 @@
+# ═══════════════════════════════════════════════
+# ResQ Route .gitignore
+# ═══════════════════════════════════════════════
+
+# ── Environment & Secrets ──
+.env
+*.env
+*.env.local
+android/app/google-services.json
+ios/Runner/GoogleService-Info.plist
+android/key.properties
+*.jks
+*.keystore
+
+# ── Flutter/Dart ──
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+*.g.dart
+*.freezed.dart
+
+# ── IDE ──
+.idea/
+*.iml
+.vscode/settings.json
+
+# ── Android ──
+android/.gradle/
+android/app/debug/
+android/app/profile/
+android/app/release/
+**/android/local.properties
+
+# ── iOS ──
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Flutter/Generated.xcconfig
+ios/Flutter/app.flx
+ios/Flutter/flutter_assets/
+ios/Flutter/flutter_export_environment.sh
+
+# ── macOS ──
+macos/Pods/
+macos/.symlinks/
+
+# ── OS Generated ──
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# ── Coverage ──
+coverage/
+
+# ── Python (.venv for scripts) ──
+__pycache__/
+*.pyc
+.venv/
+
+# ── Node (for edge functions) ──
+node_modules/
