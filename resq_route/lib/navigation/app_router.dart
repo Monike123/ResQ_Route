@@ -8,6 +8,7 @@ import '../features/auth/presentation/screens/emergency_contacts_screen.dart';
 import '../features/routes/presentation/screens/home_screen.dart';
 import '../features/routes/presentation/screens/search_screen.dart';
 import '../features/routes/presentation/screens/route_selection_screen.dart';
+import '../features/monitoring/presentation/screens/active_journey_screen.dart';
 
 /// App navigation using GoRouter.
 /// Routes are added progressively as features are implemented.
@@ -73,8 +74,12 @@ class AppRouterConfig {
         builder: (context, state) => const RouteSelectionScreen(),
       ),
 
-      // ── Journey Routes (Phase 5) ──
-      // GoRoute(path: '/journey', ...),
+      // ── Phase 5: Journey Monitoring ──
+      GoRoute(
+        path: '/active-journey',
+        name: 'active-journey',
+        builder: (context, state) => const ActiveJourneyScreen(),
+      ),
       // GoRoute(path: '/sos', ...),
     ],
   );

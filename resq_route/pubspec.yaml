@@ -46,6 +46,11 @@ dependencies:
   google_maps_flutter: ^2.6.0
   geolocator: ^13.0.0
 
+  # ── Phase 5: Live Monitoring ──
+  speech_to_text: ^7.0.0
+  battery_plus: ^6.0.0
+  vibration: ^2.0.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
