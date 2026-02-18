@@ -9,6 +9,7 @@ import '../features/routes/presentation/screens/home_screen.dart';
 import '../features/routes/presentation/screens/search_screen.dart';
 import '../features/routes/presentation/screens/route_selection_screen.dart';
 import '../features/monitoring/presentation/screens/active_journey_screen.dart';
+import '../features/reporting/presentation/screens/journey_complete_screen.dart';
 
 /// App navigation using GoRouter.
 /// Routes are added progressively as features are implemented.
@@ -81,6 +82,15 @@ class AppRouterConfig {
         builder: (context, state) => const ActiveJourneyScreen(),
       ),
       // GoRoute(path: '/sos', ...),
+
+      // ── Phase 7: Reporting ──
+      GoRoute(
+        path: '/journey-complete/:journeyId',
+        name: 'journey-complete',
+        builder: (context, state) => JourneyCompleteScreen(
+          journeyId: state.pathParameters['journeyId']!,
+        ),
+      ),
     ],
   );
 }

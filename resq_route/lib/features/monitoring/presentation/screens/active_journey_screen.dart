@@ -314,11 +314,16 @@ class _ActiveJourneyScreenState extends ConsumerState<ActiveJourneyScreen> {
             Expanded(
               child: ElevatedButton(
                 onPressed: () {
+                  final journeyId = ref.read(activeJourneyIdProvider);
                   ref
                       .read(journeyStateMachineProvider)
                       .transition(JourneyState.completed);
                   _cleanup();
-                  context.pop();
+                  if (journeyId != null) {
+                    context.go('/journey-complete/$journeyId');
+                  } else {
+                    context.go('/');
+                  }
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.safetySafe,
