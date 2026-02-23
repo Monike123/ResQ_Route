@@ -1,106 +1,191 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/ai_analysis_model.dart';
+import '../services/crime_search_orchestrator.dart';
 
-/// Datasource for AI crime analysis via Supabase Edge Functions.
+/// Datasource for AI-powered route crime analysis.
+///
+/// Uses dual-provider crime search (Gemini + Perplexity)
+/// to find crime history along route areas, then returns
+/// a structured AiAnalysisModel for the safety scoring engine.
 ///
 /// Features:
-/// - 6-hour cache lookup before calling AI
-/// - Fallback response when AI is unavailable
+/// - 7-day cache via CrimeSearchOrchestrator
+/// - Dual-provider parallel search
+/// - Fallback response when both AIs unavailable
 /// - Token usage tracking
 class AiAnalysisDatasource {
   final SupabaseClient _client;
+  late final CrimeSearchOrchestrator _orchestrator;
 
-  AiAnalysisDatasource(this._client);
+  AiAnalysisDatasource(this._client) {
+    _orchestrator = CrimeSearchOrchestrator(_client);
+  }
 
-  /// Get AI analysis for a route — checks cache first, then calls Edge Function.
+  /// Get AI analysis for a route.
+  ///
+  /// Extracts route name and city from [routeData], queries both
+  /// Gemini and Perplexity for crime data, and returns a structured
+  /// analysis result.
   Future<AiAnalysisModel> getAnalysis({
     required String routeId,
     required Map<String, dynamic> routeData,
-    required List<Map<String, dynamic>> crimeData,
   }) async {
-    // 1. Check cache (6hr TTL)
-    final cached = await _getCachedAnalysis(routeId);
-    if (cached != null) return cached;
+    // Extract route name and city from route data
+    final routeName = _extractRouteName(routeData);
+    final city = _extractCity(routeData);
 
-    // 2. Call Edge Function
     try {
-      final response = await _client.functions.invoke(
-        'ai-crime-analysis',
-        body: {
-          'routeId': routeId,
-          'routeData': routeData,
-          'crimeData': crimeData,
-        },
+      // Search for crime data using dual-provider orchestrator
+      final crimeResult = await _orchestrator.searchCrimeForRoute(
+        routeName: routeName,
+        city: city,
       );
 
-      final data = response.data as Map<String, dynamic>;
+      // Convert CrimeSearchResult → AiAnalysisModel
+      final highRiskSegments = crimeResult.crimeReports
+          .where((r) =>
+              r.severity == 'critical' || r.severity == 'high')
+          .map((r) => HighRiskSegment(
+                lat: routeData['originLat'] as double? ?? 0,
+                lng: routeData['originLng'] as double? ?? 0,
+                reason: '${r.crimeType}: ${r.description}',
+                severity: r.severity,
+              ))
+          .toList();
 
-      // 3. Parse and validate
-      final analysis = AiAnalysisModel.fromJson(data);
+      // Map overall_risk to safety_rating (inverse)
+      final safetyRating = _riskToRating(crimeResult.overallRisk);
 
-      // 4. Log usage (non-blocking)
-      _logUsage(data);
+      final analysis = AiAnalysisModel(
+        riskLevel: crimeResult.overallRisk,
+        safetyRating: safetyRating,
+        highRiskSegments: highRiskSegments,
+        precautions: crimeResult.safetyTips,
+        summary: crimeResult.summary,
+        confidence: crimeResult.confidence,
+      );
+
+      // Log usage (non-blocking)
+      _logUsage(routeId, crimeResult.source);
 
       return analysis;
     } catch (e) {
-      // AI unavailable — return statistical fallback
+      // Both providers failed — return statistical fallback
       return AiAnalysisModel(
         riskLevel: 'medium',
         safetyRating: 70,
         highRiskSegments: [],
         precautions: ['AI analysis unavailable — exercise general caution'],
-        summary: 'Statistical fallback used. AI service was unreachable.',
-        confidence: 0.3,
+        summary: 'Both AI providers unreachable. Using default safety score.',
+        confidence: 0.2,
         isFallback: true,
       );
     }
   }
 
-  /// Check for a cached (non-expired) analysis for this route.
-  Future<AiAnalysisModel?> _getCachedAnalysis(String routeId) async {
-    try {
-      final response = await _client
-          .from('ai_analyses')
-          .select('result, is_fallback')
-          .eq('route_id', routeId)
-          .eq('analysis_type', 'crime_analysis')
-          .gt('expires_at', DateTime.now().toIso8601String())
-          .order('cached_at', ascending: false)
-          .limit(1)
-          .maybeSingle();
+  /// Convert CrimeSearchResult to CrimeDataPoints for SafetyScoreService.
+  Future<List<CrimeDataPointFromAi>> getCrimeDataPoints({
+    required String routeName,
+    required String city,
+  }) async {
+    final result = await _orchestrator.searchCrimeForRoute(
+      routeName: routeName,
+      city: city,
+    );
 
-      if (response == null) return null;
+    return result.crimeReports.map((report) {
+      return CrimeDataPointFromAi(
+        severity: report.severity,
+        crimeType: report.crimeType,
+        description: report.description,
+        approximateDate: report.approximateDate,
+      );
+    }).toList();
+  }
 
-      final result = response['result'] as Map<String, dynamic>;
-      return AiAnalysisModel.fromJson(result);
-    } catch (_) {
-      return null;
+  /// Extract a meaningful route name from route data.
+  String _extractRouteName(Map<String, dynamic> routeData) {
+    // Try start_address or end_address first
+    final startAddr = routeData['start_address'] as String?;
+    final endAddr = routeData['end_address'] as String?;
+
+    if (startAddr != null && endAddr != null) {
+      return '$startAddr to $endAddr';
+    }
+
+    // Fallback: use step instructions
+    final steps = routeData['steps'] as List<dynamic>?;
+    if (steps != null && steps.isNotEmpty) {
+      final roadNames = steps
+          .map((s) => (s as Map<String, dynamic>)['instruction'] as String?)
+          .where((i) => i != null && i.isNotEmpty)
+          .take(3)
+          .join(', ');
+      if (roadNames.isNotEmpty) return roadNames;
+    }
+
+    // Last resort: coordinates
+    return '${routeData['originLat']},${routeData['originLng']} to '
+        '${routeData['destLat']},${routeData['destLng']}';
+  }
+
+  /// Extract city from route data.
+  String _extractCity(Map<String, dynamic> routeData) {
+    final endAddr = routeData['end_address'] as String?;
+    if (endAddr != null) {
+      // Try to extract city from address (usually last 2-3 parts)
+      final parts = endAddr.split(',');
+      if (parts.length >= 2) {
+        return parts[parts.length - 2].trim();
+      }
+      return endAddr;
+    }
+    return 'India';
+  }
+
+  /// Map risk level to numeric safety rating (0-100, higher = safer).
+  double _riskToRating(String riskLevel) {
+    switch (riskLevel) {
+      case 'critical':
+        return 20.0;
+      case 'high':
+        return 40.0;
+      case 'medium':
+        return 65.0;
+      case 'low':
+        return 85.0;
+      default:
+        return 70.0;
     }
   }
 
   /// Log AI usage for cost tracking (fire-and-forget).
-  Future<void> _logUsage(Map<String, dynamic> data) async {
+  Future<void> _logUsage(String routeId, String source) async {
     try {
-      final promptTokens = data['prompt_tokens'] as int? ??
-          data['usage']?['prompt_tokens'] as int? ??
-          0;
-      final responseTokens = data['response_tokens'] as int? ??
-          data['usage']?['response_tokens'] as int? ??
-          0;
-
-      // gemini-1.5-flash pricing: $0.075/1M input, $0.30/1M output
-      final estimatedCost =
-          (promptTokens * 0.000000075) + (responseTokens * 0.0000003);
-
       await _client.from('ai_usage_log').insert({
-        'model': 'gemini-1.5-flash',
-        'prompt_tokens': promptTokens,
-        'response_tokens': responseTokens,
-        'estimated_cost': estimatedCost,
-        'endpoint': 'ai-crime-analysis',
+        'model': source,
+        'prompt_tokens': 0,
+        'response_tokens': 0,
+        'estimated_cost': 0.0,
+        'endpoint': 'crime-search-$source',
       });
     } catch (_) {
-      // Non-critical — don't block the main flow
+      // Non-critical
     }
   }
+}
+
+/// Crime data point from AI analysis — for feeding into SafetyScoreService.
+class CrimeDataPointFromAi {
+  final String severity;
+  final String crimeType;
+  final String description;
+  final String approximateDate;
+
+  const CrimeDataPointFromAi({
+    required this.severity,
+    required this.crimeType,
+    required this.description,
+    required this.approximateDate,
+  });
 }

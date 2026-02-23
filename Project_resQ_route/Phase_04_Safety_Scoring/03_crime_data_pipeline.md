@@ -1,136 +1,111 @@
 # 03 — Crime Data Pipeline
 
 ## Objective
-Build a system to ingest, process, and maintain crime data from external sources to feed the safety scoring algorithm.
+Build a system to source, analyze, and cache crime data from AI web search to feed the safety scoring algorithm. Future-proofed for government data integration.
 
 ---
 
 ## Data Sources
 
-| Source | Type | Method | Frequency |
-|--------|------|--------|-----------|
-| Government police APIs | Official records | API/CSV import | Weekly |
-| AI news aggregation | Crime news | Gemini analysis | Daily |
-| User flags | Crowdsourced | Real-time | Continuous |
-| Open data portals | Public datasets | CSV/JSON import | Monthly |
+| Source | Type | Method | Status |
+|--------|------|--------|--------|
+| **Gemini AI** | AI crime analysis | Direct API call | ✅ Active |
+| **Perplexity AI** | Web-grounded search | Direct API call | ✅ Active |
+| User flags | Crowdsourced | Real-time in-app | ✅ Active |
+| Government police APIs | Official records | API/CSV import | 🔮 Future |
+| Open data portals | Public datasets | CSV/JSON import | 🔮 Future |
 
 ---
 
-## Ingestion Flow
+## AI Crime Search Flow
 
 ```mermaid
 flowchart TD
-    A[Data Sources] --> B[Ingestion Script - Python .venv]
-    B --> C[Data Cleaning & Normalization]
-    C --> D[Geocoding - lat/lng from address]
-    D --> E[Severity Classification]
-    E --> F[Insert into crime_data table]
-    F --> G[Trigger AI Analysis on new data]
-    G --> H[Update safety scores for affected routes]
+    A["User searches route"] --> B["Google Maps returns route names/areas"]
+    B --> C{"Check crime_data cache\n(7-day TTL)"}
+    C -- "Cache HIT" --> D["Return cached CrimeDataPoints instantly"]
+    C -- "Cache MISS" --> E["CrimeSearchOrchestrator"]
+    E --> F["Call Gemini AI\n(crime analysis prompt)"]
+    E --> G["Call Perplexity AI\n(web-grounded search)"]
+    F --> H["Merge results\n(deduplicate, pick higher risk)"]
+    G --> H
+    H --> I["Cache in crime_data table\n(source='ai_merged', TTL=7d)"]
+    I --> D
 ```
 
 ---
 
-## Python Ingestion Script
+## Crime Types Searched
 
-### `scripts/crime_data_ingestion.py`
+The AI providers are prompted to search for these India-specific crime types:
 
-```python
-import json
-import hashlib
-from datetime import datetime
-from supabase import create_client, Client
-import requests
-
-def ingest_crime_data(data_file: str, source: str):
-    """Ingest crime data from a JSON file into Supabase."""
-    supabase: Client = create_client(
-        os.environ['SUPABASE_URL'],
-        os.environ['SUPABASE_SERVICE_ROLE_KEY']
-    )
-    
-    with open(data_file) as f:
-        records = json.load(f)
-    
-    for record in records:
-        # 1. Geocode address if no coordinates
-        if 'lat' not in record:
-            coords = geocode_address(record['address'])
-            record['lat'] = coords['lat']
-            record['lng'] = coords['lng']
-        
-        # 2. Classify severity
-        severity = classify_severity(record['crime_type'])
-        
-        # 3. Generate dedup hash
-        dedup_key = hashlib.md5(
-            f"{record['lat']:.4f}_{record['lng']:.4f}_{record['crime_type']}_{record.get('date', '')}".encode()
-        ).hexdigest()
-        
-        # 4. Insert (skip duplicates)
-        supabase.table('crime_data').upsert({
-            'location': f"POINT({record['lng']} {record['lat']})",
-            'crime_type': record['crime_type'],
-            'severity': severity,
-            'description': record.get('description', ''),
-            'source': source,
-            'occurred_at': record.get('date'),
-            'metadata': {'dedup_key': dedup_key, 'raw': record},
-        }, on_conflict='id').execute()
-
-def classify_severity(crime_type: str) -> str:
-    """Classify crime severity based on type."""
-    critical = ['murder', 'homicide', 'kidnapping', 'rape', 'armed_robbery']
-    high = ['assault', 'robbery', 'carjacking', 'shooting']
-    medium = ['burglary', 'theft', 'vandalism', 'drug_offense']
-    
-    crime_lower = crime_type.lower()
-    if any(c in crime_lower for c in critical): return 'critical'
-    if any(c in crime_lower for c in high): return 'high'
-    if any(c in crime_lower for c in medium): return 'medium'
-    return 'low'
-```
+| Crime Type | Severity | Impact Score |
+|-----------|----------|-------------|
+| Murder, Rape, Kidnapping, Acid attack | **Critical** | 10× |
+| Armed robbery, Assault, Sexual harassment | **High** | 7× |
+| Chain snatching, Theft, Stalking | **Medium** | 4× |
+| Eve teasing, Verbal harassment | **Low** | 2× |
 
 ---
 
-## Data Decay
+## Dual-Provider Architecture
 
-Crime data relevance decreases over time. Apply a temporal decay:
+### Gemini (`GeminiCrimeSearchService`)
+- Uses `gemini-2.0-flash` model
+- Structured JSON response via `responseMimeType`
+- Best for: analytical crime pattern assessment
+
+### Perplexity (`PerplexityCrimeSearchService`)
+- Uses `sonar` model with `search_recency_filter: year`
+- Web-grounded with citations from news sources
+- Best for: finding recent real crime news articles
+
+### Orchestrator (`CrimeSearchOrchestrator`)
+- Calls **both providers in parallel** for speed
+- Merges results: deduplicates crime reports, picks higher confidence
+- Caches merged result in `crime_data` table with 7-day TTL
+- If both fail: returns fallback (medium risk, low confidence)
+
+---
+
+## Cache Schema (`crime_data` table)
 
 ```sql
--- Materialized view for decayed crime impact
-CREATE MATERIALIZED VIEW crime_impact AS
-SELECT
-    id,
-    location,
-    crime_type,
-    severity,
-    occurred_at,
-    CASE severity
-        WHEN 'critical' THEN 10
-        WHEN 'high' THEN 7
-        WHEN 'medium' THEN 4
-        WHEN 'low' THEN 2
-    END *
-    CASE
-        WHEN occurred_at > NOW() - INTERVAL '30 days' THEN 1.0
-        WHEN occurred_at > NOW() - INTERVAL '90 days' THEN 0.7
-        WHEN occurred_at > NOW() - INTERVAL '180 days' THEN 0.4
-        WHEN occurred_at > NOW() - INTERVAL '365 days' THEN 0.2
-        ELSE 0.05
-    END AS impact_score
-FROM crime_data;
-
--- Refresh daily via pg_cron
-SELECT cron.schedule('refresh-crime-impact', '0 3 * * *', 'REFRESH MATERIALIZED VIEW crime_impact');
+CREATE TABLE public.crime_data (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    location GEOMETRY(POINT, 4326),
+    crime_type VARCHAR(100) NOT NULL,
+    severity TEXT CHECK (severity IN ('low','medium','high','critical')),
+    description TEXT,
+    source VARCHAR(100),      -- 'ai_gemini', 'ai_perplexity', 'ai_merged', 'government'
+    route_name VARCHAR(500),  -- For cache lookup
+    city VARCHAR(200),
+    occurred_at TIMESTAMPTZ,
+    ai_confidence FLOAT,
+    expires_at TIMESTAMPTZ DEFAULT NOW() + INTERVAL '7 days',
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
 ```
+
+---
+
+## Future: Government Data Integration
+
+When official police/government crime data becomes available:
+
+1. Add `source = 'government'` records with higher confidence (0.95)
+2. The scoring algorithm automatically weighs them higher
+3. AI data supplements gaps in official coverage
+4. No code changes needed — the `source` column distinguishes origin
 
 ---
 
 ## Verification
-- [ ] Ingestion script processes CSV/JSON data files
-- [ ] Geocoding converts addresses to coordinates
-- [ ] Severity auto-classified from crime type
-- [ ] Duplicate detection prevents re-ingestion
-- [ ] Temporal decay reduces old crime impact
-- [ ] Materialized view refreshes daily
+- [x] Gemini crime search returns structured JSON
+- [x] Perplexity web search returns cited crime reports
+- [x] Orchestrator calls both in parallel and merges
+- [x] Results cached in crime_data with 7-day TTL
+- [x] Cache hit returns instantly, no API call
+- [x] Both-provider failure returns graceful fallback
+- [ ] Government data source integration (future)

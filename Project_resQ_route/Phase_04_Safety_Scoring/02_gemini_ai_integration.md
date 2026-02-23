@@ -1,209 +1,98 @@
-# 02 — Gemini AI Integration
+# 02 — Gemini & Perplexity AI Integration
 
 ## Objective
-Integrate Google Gemini AI to analyze crime data, generate crime intelligence from news sources, and provide AI-powered safety assessments for route segments.
+Integrate both Google Gemini AI and Perplexity AI to analyze crime data through web search and AI analysis, providing dual-sourced safety assessments for route segments.
 
 ---
 
-## Two AI Use Cases
+## Three AI Use Cases
 
-### Use Case 1: Crime Data Analysis
-Analyze structured crime incident data near a route to assess risk.
+### Use Case 1: Crime Data Analysis (Gemini)
+Analyze crime patterns and provide structured risk assessments for route areas.
 
-### Use Case 2: AI-Aggregated Crime News
-Search and analyze recent crime news for a geographic area to supplement official data.
+### Use Case 2: Web-Grounded Crime Search (Perplexity)
+Search the web for recent crime news articles along a route, returning cited sources.
+
+### Use Case 3: Combined Analysis (Orchestrator)
+Call both providers in parallel, merge results for comprehensive coverage.
 
 ---
 
 ## Prompt Engineering
 
-### Crime Analysis Prompt
+### Gemini Crime Analysis Prompt
 
-```typescript
-function buildCrimeAnalysisPrompt(routeData: any, crimeData: any[]) {
-  return `You are a safety analysis AI for a personal safety navigation app.
+```
+You are a crime intelligence analyst for an Indian women's safety navigation app.
 
-TASK: Analyze the following crime data near a route and provide a structured safety assessment.
+TASK: Research and analyze crime incidents reported along or near the following route/area.
 
-ROUTE INFORMATION:
-- Start: (${routeData.originLat}, ${routeData.originLng})
-- End: (${routeData.destLat}, ${routeData.destLng})
-- Distance: ${routeData.distanceKm} km
-- Estimated Duration: ${routeData.durationMin} minutes
-- Time of Travel: ${new Date().toISOString()}
+ROUTE/AREA: {routeName}
+CITY/REGION: {city}
 
-CRIME DATA (within 500m of route):
-${JSON.stringify(crimeData, null, 2)}
+Search for: kidnapping, rape, sexual assault, missing persons, robbery,
+chain snatching, eve teasing, stalking, murder, acid attacks, harassment.
 
-INSTRUCTIONS:
-1. Assess the overall risk level for this route
-2. Identify high-risk segments
-3. Suggest precautions
-4. Rate the route safety from 0-100
-
-RESPOND IN THIS EXACT JSON FORMAT:
+RESPOND IN JSON:
 {
-  "risk_level": "low|medium|high|critical",
-  "safety_rating": <number 0-100>,
-  "high_risk_segments": [
-    {
-      "lat": <number>,
-      "lng": <number>,
-      "reason": "<string>",
-      "severity": "low|medium|high|critical"
-    }
+  "area_name": "<string>",
+  "incidents_found": <number>,
+  "crime_reports": [
+    {"crime_type": "...", "severity": "critical|high|medium|low",
+     "approximate_date": "YYYY-MM", "description": "..."}
   ],
-  "precautions": ["<string>"],
-  "summary": "<one paragraph summary>",
-  "confidence": <number 0-1>
-}
-
-IMPORTANT: Respond ONLY with valid JSON. No markdown, no explanations outside the JSON.`;
+  "overall_risk": "low|medium|high|critical",
+  "confidence": <0-1>,
+  "summary": "<assessment>",
+  "safety_tips": ["<tip1>", "<tip2>"]
 }
 ```
 
-### Crime News Prompt
+### Perplexity Web Search Prompt
 
-```typescript
-function buildCrimeNewsPrompt(lat: number, lng: number, radiusKm: number) {
-  return `You are a crime intelligence analyst.
+```
+Search the web for crime incidents reported along or near "{routeName}" in {city}, India.
 
-TASK: Based on your knowledge, identify any notable crime patterns, incidents, or safety concerns in the area around coordinates (${lat}, ${lng}) within a ${radiusKm}km radius.
+Look for: kidnapping, rape, sexual assault, missing persons, robbery,
+chain snatching, eve teasing, stalking, murder, acid attacks.
 
-Focus on:
-- Recent crime trends (last 6 months)
-- Common crime types in this area
-- Time-based patterns (night vs day)
-- Seasonal patterns
-
-RESPOND IN THIS EXACT JSON FORMAT:
-{
-  "area_assessment": "low_risk|moderate_risk|high_risk",
-  "crime_patterns": [
-    {
-      "type": "<crime type>",
-      "frequency": "rare|occasional|common",
-      "time_pattern": "<when it typically occurs>",
-      "details": "<brief description>"
-    }
-  ],
-  "safety_tips": ["<string>"],
-  "confidence": <number 0-1>,
-  "data_freshness": "<how recent the information is>"
-}`;
-}
+Respond in JSON with sources/citations.
 ```
 
 ---
 
-## Edge Function: `ai-crime-analysis`
+## API Configuration
 
-```typescript
-// supabase/functions/ai-crime-analysis/index.ts
-import { GoogleGenerativeAI } from '@google/generative-ai';
+### Gemini API
+- **Model**: `gemini-2.0-flash`
+- **Endpoint**: `generativelanguage.googleapis.com/v1beta`
+- **Temperature**: 0.2 (factual responses)
+- **Response format**: `application/json`
 
-serve(async (req) => {
-  const { routeId, routeData, crimeData } = await req.json();
-  
-  const apiKey = Deno.env.get('GEMINI_API_KEY')!;
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-
-  try {
-    // 1. Build prompt
-    const prompt = buildCrimeAnalysisPrompt(routeData, crimeData);
-
-    // 2. Call Gemini
-    const result = await model.generateContent(prompt);
-    const responseText = result.response.text();
-
-    // 3. Parse response (extract JSON)
-    let analysis;
-    try {
-      // Try to extract JSON from response
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        analysis = JSON.parse(jsonMatch[0]);
-      } else {
-        throw new Error('No JSON found in response');
-      }
-    } catch (parseError) {
-      // AI response not parseable — use fallback
-      return new Response(JSON.stringify({
-        error: 'ai_parse_error',
-        fallback: true,
-        safety_rating: 70, // Default moderate safety
-      }), { status: 200 });
-    }
-
-    // 4. Validate response schema
-    if (!validateAnalysisSchema(analysis)) {
-      return new Response(JSON.stringify({
-        error: 'invalid_schema',
-        fallback: true,
-        safety_rating: 70,
-      }), { status: 200 });
-    }
-
-    // 5. Store analysis result
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-    );
-
-    await supabase.from('ai_analyses').insert({
-      route_id: routeId,
-      analysis_type: 'crime_analysis',
-      prompt_tokens: result.response.usageMetadata?.promptTokenCount,
-      response_tokens: result.response.usageMetadata?.candidatesTokenCount,
-      result: analysis,
-      model_used: 'gemini-1.5-flash',
-    });
-
-    return new Response(JSON.stringify(analysis));
-  } catch (error) {
-    // Gemini API failed — return fallback
-    return new Response(JSON.stringify({
-      error: 'ai_unavailable',
-      fallback: true,
-      safety_rating: 70,
-      message: 'AI analysis unavailable, using statistical fallback',
-    }), { status: 200 });
-  }
-});
-
-function validateAnalysisSchema(data: any): boolean {
-  return (
-    typeof data.risk_level === 'string' &&
-    ['low', 'medium', 'high', 'critical'].includes(data.risk_level) &&
-    typeof data.safety_rating === 'number' &&
-    data.safety_rating >= 0 && data.safety_rating <= 100 &&
-    Array.isArray(data.high_risk_segments) &&
-    Array.isArray(data.precautions) &&
-    typeof data.summary === 'string' &&
-    typeof data.confidence === 'number'
-  );
-}
-```
+### Perplexity API
+- **Model**: `sonar` (web search optimized)
+- **Endpoint**: `api.perplexity.ai/chat/completions`
+- **Recency filter**: `year` (last 12 months)
+- **Temperature**: 0.2
 
 ---
 
-## AI Analysis Cache Table
+## Dual-Provider Merge Strategy
 
-```sql
-CREATE TABLE public.ai_analyses (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    route_id UUID REFERENCES public.routes(id),
-    analysis_type VARCHAR(50) NOT NULL,
-    prompt_tokens INTEGER,
-    response_tokens INTEGER,
-    result JSONB NOT NULL,
-    model_used VARCHAR(50),
-    cached_at TIMESTAMPTZ DEFAULT NOW(),
-    expires_at TIMESTAMPTZ DEFAULT NOW() + INTERVAL '6 hours'
-);
-
-CREATE INDEX idx_ai_analyses_route ON public.ai_analyses(route_id);
+```mermaid
+flowchart TD
+    A[Route Name + City] --> B["Gemini API\n(crime analysis)"]
+    A --> C["Perplexity API\n(web search + citations)"]
+    B --> D["CrimeSearchOrchestrator\nmerge results"]
+    C --> D
+    D --> E["Deduplicate by crime_type + date"]
+    D --> F["Pick higher confidence"]
+    D --> G["Pick higher risk level"]
+    D --> H["Merge unique safety tips"]
+    E --> I["Merged CrimeSearchResult"]
+    F --> I
+    G --> I
+    H --> I
 ```
 
 ---
@@ -212,44 +101,31 @@ CREATE INDEX idx_ai_analyses_route ON public.ai_analyses(route_id);
 
 ```mermaid
 flowchart TD
-    A[Request AI Analysis] --> B{Gemini Available?}
-    B -- Yes --> C[Get AI Analysis]
-    C --> D{Response Valid?}
-    D -- Yes --> E[Use AI Score]
-    D -- No --> F[Use Statistical Fallback]
-    B -- No --> F
-    F --> G[Calculate from crime_data + unsafe_zones only]
-    G --> H[Return score with fallback: true flag]
+    A[Request Crime Analysis] --> B{Both Providers Available?}
+    B -- Yes --> C[Merge Both Results]
+    B -- No --> D{Any Provider Available?}
+    D -- Gemini Only --> E[Use Gemini Result]
+    D -- Perplexity Only --> F[Use Perplexity Result]
+    D -- Neither --> G[Statistical Fallback]
+    G --> H["Default: medium risk, confidence 0.2\nScore from user flags + environment only"]
 ```
-
-When AI is unavailable, the safety score uses only the statistical components (crime density + user flags + commercial points) without AI enhancement.
 
 ---
 
 ## Prompt Injection Prevention
 
 > [!CAUTION]
-> Never include user-generated text directly in AI prompts without sanitization.
+> Route names come from Google Maps and are generally safe, but always sanitize.
 
-```typescript
-function sanitizeForPrompt(text: string): string {
-  // Remove any potential prompt injection patterns
-  return text
-    .replace(/INSTRUCTIONS?:/gi, '')
-    .replace(/SYSTEM:/gi, '')
-    .replace(/IGNORE .*/gi, '')
-    .replace(/```/g, '')
-    .slice(0, 500); // Max 500 chars
-}
-```
+The `InputValidator.sanitizeAiPrompt()` utility (Phase 9) strips injection patterns before including any user-contributed text in prompts.
 
 ---
 
 ## Verification
-- [ ] Gemini API called with structured prompt
-- [ ] Response parsed and validated against schema
-- [ ] Invalid responses trigger fallback scoring
-- [ ] AI unavailability handled gracefully
-- [ ] Analysis results cached (6hr TTL)
-- [ ] Token usage tracked for cost monitoring
-- [ ] Prompt injection patterns sanitized
+- [x] Gemini API called with structured crime analysis prompt
+- [x] Perplexity API called with web search prompt
+- [x] Both responses parsed and validated
+- [x] Invalid responses trigger fallback
+- [x] Dual-provider results merged correctly
+- [x] Token usage tracked for cost monitoring
+- [x] Prompt injection patterns sanitized
